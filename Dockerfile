@@ -2,26 +2,19 @@
 # Installs all 15 security tools for comprehensive penetration testing
 
 # ============================================================================
-# Stage 1: Builder - Install Go tools and build dependencies
+# Tool Stages: Pull official binaries or build from source
 # ============================================================================
-FROM golang:1.22-alpine AS builder
+# Build ffuf from source (official image not available/public)
+FROM golang:alpine AS builder
+RUN go install -v github.com/ffuf/ffuf/v2@latest
 
-WORKDIR /build
-
-# Install build dependencies
-RUN apk add --no-cache \
-    git \
-    gcc \
-    musl-dev
-
-# Install Go-based security tools
-RUN go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
-    go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
-    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    go install -v github.com/OJ/gobuster/v3@latest && \
-    go install -v github.com/ffuf/ffuf/v2@latest && \
-    go install -v github.com/owasp-amass/amass/v4/...@master && \
-    go install -v github.com/zricethezav/gitleaks/v8@latest
+# Pull official binaries for other tools
+FROM projectdiscovery/httpx:latest AS httpx
+FROM projectdiscovery/subfinder:latest AS subfinder
+FROM projectdiscovery/nuclei:latest AS nuclei
+FROM ghcr.io/oj/gobuster:latest AS gobuster
+FROM owaspamass/amass:latest AS amass
+FROM zricethezav/gitleaks:latest AS gitleaks
 
 # ============================================================================
 # Stage 2: Runtime - Python environment with all tools
@@ -42,6 +35,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR ${GUARDIAN_HOME}
 
 # Install system dependencies and security tools
+# Added gcompat for Go binary compatibility
 RUN apk add --no-cache \
     # Build dependencies
     gcc \
@@ -53,6 +47,7 @@ RUN apk add --no-cache \
     nmap-scripts \
     git \
     curl \
+    gcompat \
     # Ruby for WhatWeb and WPScan
     ruby \
     ruby-dev \
@@ -80,10 +75,14 @@ RUN apk add --no-cache \
     # Clean up build dependencies
     apk del make gcc musl-dev
 
-
-
-# Copy Go tools from builder
-COPY --from=builder /go/bin/* /usr/local/bin/
+# Copy Go tools from official images
+COPY --from=httpx /usr/local/bin/httpx /usr/local/bin/
+COPY --from=subfinder /usr/local/bin/subfinder /usr/local/bin/
+COPY --from=nuclei /usr/local/bin/nuclei /usr/local/bin/
+COPY --from=gobuster /app/gobuster /usr/local/bin/gobuster
+COPY --from=builder /go/bin/ffuf /usr/local/bin/
+COPY --from=amass /bin/amass /usr/local/bin/
+COPY --from=gitleaks /usr/bin/gitleaks /usr/local/bin/
 
 # Install Python-based security tools
 RUN pip install --no-cache-dir \
